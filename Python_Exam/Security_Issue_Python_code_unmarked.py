@@ -10,12 +10,17 @@ import os
 import logging
 from datetime import datetime
 
-#
-API_KEY = "sk-1234567890abcdef1234567890abcdef"
-DATABASE_PASSWORD = "admin123"
-AWS_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"
-AWS_SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-SMTP_PASSWORD = "email_password_123"
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Shifted Environment variables in a file called .env (I'll not add it to .gitignore) 
+# However using IAM is the best option.
+API_KEY = os.getenv('API_KEY')
+DATABASE_PASSWORD = os.getenv('DATABASE_PASSWORD')
+AWS_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY')
+AWS_SECRET_KEY = os.getenv('AWS_SECRET_KEY')
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
 
 
 DB_CONNECTION_STRING = f"postgresql://admin:{DATABASE_PASSWORD}@prod-db.company.com:5432/maindb"
@@ -59,7 +64,8 @@ class DataProcessor:
             conn.commit()
             return conn, cursor
         except Exception as e:
-            self.logger.error(f"Database connection failed: {str(e)} | Connection: {DB_CONNECTION_STRING}")
+            # self.logger.error(f"Database connection failed: {str(e)} | Connection: {DB_CONNECTION_STRING}") # DB_CONNECTION_STRING contains the database password. IT's not wise to log it.
+            self.logger.error(f"Database connection failed: {str(e)}")
             return None, None
     
     def fetch_user_data(self, user_id):
@@ -67,12 +73,15 @@ class DataProcessor:
         conn, cursor = self.connect_to_database()
         if not cursor:
             return None
-        
-        query = f"SELECT * FROM user_data WHERE id = {user_id}"
+        # Injection vulnerability. Some could pass something like "1=1 --" which will return all the
+        # rows, thus compromising all user's data. This is NOT the recommended way to do it. We should 
+        # ALWAYS pass fields as parameters and frame the query ourselves before making db calls. 
+        # query = f"SELECT * FROM user_data WHERE id = {user_id}"
+        query = "SELECT * FROM user_data WHERE id = %s"
         self.logger.debug(f"Executing query: {query}")
         
         try:
-            cursor.execute(query)
+            cursor.execute(query,(user_id,)) # Passed user_id as a parameter
             result = cursor.fetchone()
             conn.close()
             return result
@@ -124,11 +133,13 @@ class DataProcessor:
                 os.path.basename(file_path)
             )
             
-            self.logger.info(f"File uploaded successfully to s3://{bucket_name}/{os.path.basename(file_path)}")
+            # self.logger.info(f"File uploaded successfully to s3://{bucket_name}/{os.path.basename(file_path)}") # Shouldn't log bucket_name
+            self.logger.info("File uploaded successfully to s3://bucket_name/bucket_path")
             return True
             
         except Exception as e:
-            self.logger.error(f"S3 upload failed: {str(e)} | Credentials: {AWS_ACCESS_KEY}")
+            # self.logger.error(f"S3 upload failed: {str(e)} | Credentials: {AWS_ACCESS_KEY}") # shouldn't log AWS_ACCESS_KEY
+            self.logger.error(f"S3 upload failed: {str(e)}")
             return False
     
     def send_notification_email(self, recipient, subject, body):
